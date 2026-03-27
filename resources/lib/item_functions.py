@@ -476,7 +476,7 @@ def add_gui_item(url, item_details, display_options, folder=True, default_sort=F
 
     # add cast
     if item_details.cast:
-        video_tag.setCast(item_details.cast)
+        video_tag.setCast(list(item_details.cast))
 
     video_tag.setTitle(list_item_name)
     if item_details.sort_name:
@@ -498,7 +498,7 @@ def add_gui_item(url, item_details, display_options, folder=True, default_sort=F
             genres_list.append(quote(genre.encode('utf8')))
         item_properties["genres"] = quote("|".join(genres_list))
 
-        video_tag.setGenres(item_details.genres)
+        video_tag.setGenres(list(item_details.genres))
 
     mediatype = 'video'
 
@@ -549,19 +549,19 @@ def add_gui_item(url, item_details, display_options, folder=True, default_sort=F
 
         video_tag.setTagLine(item_details.tagline)
         if item_details.studio:
-            video_tag.setStudios(item_details.studio)
+            video_tag.setStudios(list(item_details.studio))
         video_tag.setPremiered(item_details.premiere_date)
         video_tag.setPlot(item_details.plot)
         if item_details.director:
-            video_tag.setDirectors(item_details.director)
+            video_tag.setDirectors(list(item_details.director))
         if item_details.writer:
-            video_tag.setWriters(item_details.writer)
+            video_tag.setWriters(list(item_details.writer))
         video_tag.setDateAdded(item_details.date_added)
         if item_details.production_location:
-            video_tag.setCountries(item_details.production_location)
+            video_tag.setCountries(list(item_details.production_location))
         video_tag.setMpaa(item_details.mpaa)
         if item_details.tags:
-            video_tag.setTags(item_details.tags)
+            video_tag.setTags(list(item_details.tags))
 
         if display_options["addUserRatings"]:
             video_tag.setUserRating(round(item_details.critic_rating))
@@ -604,7 +604,7 @@ def add_gui_item(url, item_details, display_options, folder=True, default_sort=F
         if item_details.album_artist:
             video_tag.setArtists([item_details.album_artist])
         elif item_details.song_artist:
-            video_tag.setArtists(item_details.song_artist)
+            video_tag.setArtists(list(item_details.song_artist))
         video_tag.setAlbum(item_details.album_name)
 
     list_item.setContentLookup(False)
