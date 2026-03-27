@@ -235,7 +235,7 @@ def extract_item_info(item, gui_options):
 
     # Process People
     people = item.get("People", [])
-    if not people:
+    if people:
         director = []
         writer = []
         cast = []
@@ -265,7 +265,7 @@ def extract_item_info(item, gui_options):
     # Process Studios
     studios = item.get("Studios", [])
     studio_list = []
-    if not studios:
+    if studios:
         for studio in studios:
             studio_list.append(studio.get("Name"))
     item_details.studio = studio_list
@@ -532,15 +532,20 @@ def add_gui_item(url, item_details, display_options, folder=True, default_sort=F
     if is_video:
 
         video_tag.setTagLine(item_details.tagline)
-        video_tag.setStudios(item_details.studio)
+        if item_details.studio:
+            video_tag.setStudios(item_details.studio)
         video_tag.setPremiered(item_details.premiere_date)
         video_tag.setPlot(item_details.plot)
-        video_tag.setDirectors(item_details.director)
-        video_tag.setWriters(item_details.writer)
+        if item_details.director:
+            video_tag.setDirectors(item_details.director)
+        if item_details.writer:
+            video_tag.setWriters(item_details.writer)
         video_tag.setDateAdded(item_details.date_added)
-        video_tag.setCountries(item_details.production_location)
+        if item_details.production_location:
+            video_tag.setCountries(item_details.production_location)
         video_tag.setMpaa(item_details.mpaa)
-        video_tag.setTags(item_details.tags)
+        if item_details.tags:
+            video_tag.setTags(item_details.tags)
 
         if display_options["addUserRatings"]:
             video_tag.setUserRating(round(item_details.critic_rating))
