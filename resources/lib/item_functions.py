@@ -131,7 +131,9 @@ def extract_item_info(item, gui_options):
     elif item_details.item_type == "Audio":
         item_details.track_number = item.get("IndexNumber")
         item_details.album_name = item.get("Album")
-        item_details.song_artist = item.get("Artists", [])
+        artists = item.get("Artists", [])
+        if artists:
+            item_details.song_artist = [ensure_text(str(a)) for a in artists if a]
 
     elif item_details.item_type == "MusicAlbum":
         item_details.album_artist = item.get("AlbumArtist")
@@ -148,7 +150,9 @@ def extract_item_info(item, gui_options):
     item_details.tags = []
     if item.get("TagItems", []):
         for tag_info in item.get("TagItems"):
-            item_details.tags.append(tag_info.get("Name"))
+            val = tag_info.get("Name")
+            if val is not None:
+                item_details.tags.append(ensure_text(str(val)))
 
     # set the item name
     # override with name format string from request
@@ -242,12 +246,20 @@ def extract_item_info(item, gui_options):
         for person in people:
             person_type = person.get("Type")
             if person_type == "Director":
-                director.append(person.get("Name"))
+                val = person.get("Name")
+                if val is not None: 
+                    director.append(ensure_text(str(val)))
             elif person_type == "Writing":
-                writer.append(person.get("Name"))
+                val = person.get("Name")
+                if val is not None: 
+                    writer.append(ensure_text(str(val)))
             elif person_type == "Actor":
                 person_name = person.get("Name")
-                person_role = person.get("Role")
+                if person_name is None:
+                    continue
+                person_role = person.get("Role", "")
+                if person_role is None:
+                    person_role = ""
                 person_id = person.get("Id")
                 person_tag = person.get("PrimaryImageTag")
                 if person_tag:
@@ -256,8 +268,8 @@ def extract_item_info(item, gui_options):
                                                  server=gui_options["server"])
                 else:
                     person_thumbnail = ""
-                person = {"name": person_name, "role": person_role, "thumbnail": person_thumbnail}
-                cast.append(person)
+                person_dict = {"name": ensure_text(str(person_name)), "role": ensure_text(str(person_role)), "thumbnail": person_thumbnail}
+                cast.append(person_dict)
         item_details.director = director
         item_details.writer = writer
         item_details.cast = cast
@@ -267,16 +279,20 @@ def extract_item_info(item, gui_options):
     studio_list = []
     if studios:
         for studio in studios:
-            studio_list.append(studio.get("Name"))
+            val = studio.get("Name")
+            if val is not None:
+                studio_list.append(ensure_text(str(val)))
     item_details.studio = studio_list
 
     # production location
-    item_details.production_location = item.get("ProductionLocations", [])
+    locations = item.get("ProductionLocations", [])
+    if locations:
+        item_details.production_location = [ensure_text(str(loc)) for loc in locations if loc is not None]
 
     # Process Genres
     genres = item.get("Genres", [])
     if genres:
-        item_details.genres = genres
+        item_details.genres = [ensure_text(str(g)) for g in genres if g is not None]
 
     # Process UserData
     user_data = item.get("UserData", {})
@@ -460,7 +476,7 @@ def add_gui_item(url, item_details, display_options, folder=True, default_sort=F
 
     # add cast
     if item_details.cast:
-        video_tag.setCase(item_details.cast)
+        video_tag.setCast(item_details.cast)
 
     video_tag.setTitle(list_item_name)
     if item_details.sort_name:
