@@ -235,7 +235,7 @@ def extract_item_info(item, gui_options):
 
     # Process People
     people = item.get("People", [])
-    if people:
+    if not people:
         director = []
         writer = []
         cast = []
@@ -265,7 +265,7 @@ def extract_item_info(item, gui_options):
     # Process Studios
     studios = item.get("Studios", [])
     studio_list = []
-    if studios:
+    if not studios:
         for studio in studios:
             studio_list.append(studio.get("Name"))
     item_details.studio = studio_list
