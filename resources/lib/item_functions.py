@@ -476,7 +476,16 @@ def add_gui_item(url, item_details, display_options, folder=True, default_sort=F
 
     # add cast
     if item_details.cast:
-        video_tag.setCast(list(item_details.cast))
+        cast_list = []
+        for index, person in enumerate(item_details.cast):
+            try:
+                # Kodi 20 (Nexus) and newer strictly require xbmc.Actor objects
+                actor = xbmc.Actor(person['name'], person['role'], index, person['thumbnail'])
+                cast_list.append(actor)
+            except AttributeError:
+                # Fallback for Kodi 19 and older
+                cast_list.append(person)
+        video_tag.setCast(cast_list)
 
     video_tag.setTitle(list_item_name)
     if item_details.sort_name:
