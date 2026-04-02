@@ -150,7 +150,7 @@ def extract_item_info(item, gui_options):
     item_details.tags = []
     if item.get("TagItems", []):
         for tag_info in item.get("TagItems"):
-            if tag_info.get("Name"):
+            if tag_info.get("Name") is not None:
                 item_details.tags.append(tag_info.get("Name"))
 
     # set the item name
@@ -245,10 +245,10 @@ def extract_item_info(item, gui_options):
         for person in people:
             person_type = person.get("Type")
             if person_type == "Director":
-                if person.get("Name"):
+                if person.get("Name") is not None:
                     director.append(person.get("Name"))
             elif person_type == "Writing":
-                if person.get("Name"):
+                if person.get("Name") is not None:
                     writer.append(person.get("Name"))
             elif person_type == "Actor":
                 person_name = person.get("Name")
@@ -276,19 +276,19 @@ def extract_item_info(item, gui_options):
     studio_list = []
     if studios:
         for studio in studios:
-            if studio.get("Name"):
+            if studio.get("Name") is not None:
                 studio_list.append(studio.get("Name"))
     item_details.studio = studio_list
 
     # production location
     locations = item.get("ProductionLocations", [])
     if locations:
-        item_details.production_location = [loc for loc in locations if loc]
+        item_details.production_location = [loc for loc in locations if loc is not None]
 
     # Process Genres
     genres = item.get("Genres", [])
     if genres:
-        item_details.genres = [g for g in genres if g]
+        item_details.genres = [g for g in genres if g is not None]
 
     # Process UserData
     user_data = item.get("UserData", {})
