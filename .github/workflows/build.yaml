@@ -22,6 +22,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # This grabs your manual input OR falls back to the default push/tag ref
+          ref: ${{ inputs.target_branch || github.ref }}
 
       - name: Set up Python 3.x
         uses: actions/setup-python@v5
