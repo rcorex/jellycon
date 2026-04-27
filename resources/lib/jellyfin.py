@@ -80,8 +80,8 @@ class API:
 
         try:
             requests.delete(url, headers=self.headers, verify=self.verify_cert, timeout=5)
-        except:  # noqa
-            pass
+        except requests.exceptions.RequestException as e:
+            log.error('Delete request to {} failed: {}'.format(url, e))
 
     def authenticate(self, auth_data):
         # Always force create fresh headers during authentication
