@@ -51,9 +51,6 @@ class API:
                 response_data = json.loads(r.text)
             except ValueError:
                 response_data = r.json()
-        except requests.exceptions.RequestException as e:
-            log.info('Get request to {} failed: {}'.format(url, e))
-            response_data = {}
         except:  # noqa
             response_data = {}
         return response_data
@@ -71,9 +68,6 @@ class API:
                 response_data = json.loads(r.text)
             except ValueError:
                 response_data = r.json()
-        except requests.exceptions.RequestException as e:
-            log.info('Post request to {} failed: {}'.format(url, e))
-            response_data = {}
         except:  # noqa
             response_data = {}
         return response_data
@@ -86,8 +80,8 @@ class API:
 
         try:
             requests.delete(url, headers=self.headers, verify=self.verify_cert, timeout=5)
-        except requests.exceptions.RequestException as e:
-            log.info('Delete request to {} failed: {}'.format(url, e))
+        except:  # noqa
+            pass
 
     def authenticate(self, auth_data):
         # Always force create fresh headers during authentication
