@@ -38,7 +38,7 @@ class API:
         url = '{}{}'.format(self.server, path)
 
         try:
-            r = requests.get(url, headers=self.headers, verify=self.verify_cert, timeout=5)
+            r = requests.get(url, headers=self.headers, verify=self.verify_cert, timeout=(5,60))
             try:
                 '''
                 The requests library defaults to using simplejson to handle
@@ -65,7 +65,7 @@ class API:
         url = '{}{}'.format(self.server, url)
 
         try:
-            r = requests.post(url, json=payload, headers=self.headers, verify=self.verify_cert, timeout=5)
+            r = requests.post(url, json=payload, headers=self.headers, verify=self.verify_cert, timeout=(5,60))
             try:
                 # Much faster on low power devices, see above comment
                 response_data = json.loads(r.text)
@@ -85,10 +85,10 @@ class API:
         url = '{}{}'.format(self.server, url)
 
         try:
-            requests.delete(url, headers=self.headers, verify=self.verify_cert, timeout=5)
+            requests.delete(url, headers=self.headers, verify=self.verify_cert, timeout=(5,60))
         except requests.exceptions.Timeout as e:
             log.info('Delete request to {} timed out: {}'.format(url, e))
-        except:  # noqa
+        except Exception:
             pass
 
     def authenticate(self, auth_data):
