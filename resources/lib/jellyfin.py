@@ -38,7 +38,7 @@ class API:
         url = '{}{}'.format(self.server, path)
 
         try:
-            r = requests.get(url, headers=self.headers, verify=self.verify_cert, timeout=5)
+            r = requests.get(url, headers=self.headers, verify=self.verify_cert, timeout=(5,60))
             try:
                 '''
                 The requests library defaults to using simplejson to handle
@@ -80,7 +80,7 @@ class API:
 
         try:
             requests.delete(url, headers=self.headers, verify=self.verify_cert, timeout=5)
-        except:  # noqa
+        except Exception:
             pass
 
     def authenticate(self, auth_data):
