@@ -54,7 +54,7 @@ class API:
         except requests.exceptions.Timeout as e:
             log.info('Get request to {} timed out: {}'.format(url, e))
             response_data = {}
-        except:  # noqa
+        except Exception:
             response_data = {}
         return response_data
 
@@ -74,7 +74,7 @@ class API:
         except requests.exceptions.Timeout as e:
             log.info('Post request to {} timed out: {}'.format(url, e))
             response_data = {}
-        except:  # noqa
+        except Exception:
             response_data = {}
         return response_data
 
