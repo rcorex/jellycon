@@ -191,7 +191,8 @@ class PlayNextDialog(xbmcgui.WindowXMLDialog):
     def onClick(self, control_id):
         if control_id == 3013:
             log.debug("PlayNextDialog: Play Next Episode")
-            self.play_called
+            # Mark dialog as confirmed so prompt_for_stop_actions does not trigger Container.Refresh
+            self.play_called = True
             self.close()
             next_item_id = self.episode_info.get("Id")
             log.debug("Playing Next Episode: {0}".format(next_item_id))

@@ -1138,14 +1138,34 @@ def stop_all_playback():
         return
 
     log.debug("played_information: {0}".format(played_information))
+
+    # Check if Kodi is still playing (e.g., next episode started)
+    player = xbmc.Player()
+    is_playing = player.isPlaying()
+    current_playing_file = ""
+    if is_playing:
+        try:
+            current_playing_file = player.getPlayingFile()
+        except Exception as e:
+            log.debug("stop_all_playback : getPlayingFile error : {0}".format(e))
+
+    server = settings.getSetting('server_address')
+    server_clean = server.rstrip('/') if server else ""
+    is_jellyfin_playing = is_playing and bool(current_playing_file) and bool(server_clean) and (server_clean in current_playing_file)
+
     clear_entries = []
+    items_to_prompt = []
 
-    home_window.clear_property("currently_playing_id")
-    home_window.clear_property("now_playing")
-
-    for item in played_information:
+    for item in list(played_information.keys()):
         data = played_information.get(item)
+        if not data:
+            continue
         if data.get("currently_playing", False) is True:
+            # Skip stopping if Kodi is still actively playing this item
+            if is_jellyfin_playing and data.get("item_id") and data.get("item_id") in current_playing_file:
+                log.debug("stop_all_playback: item {0} is currently playing, skipping stop".format(data.get("item_id")))
+                continue
+
             log.debug("item_data: {0}".format(data))
 
             current_position = data.get("current_position", 0)
@@ -1155,7 +1175,8 @@ def stop_all_playback():
                 data["currently_playing"] = False
 
                 if data.get("play_action_type", "") == "play":
-                    prompt_for_stop_actions(jellyfin_item_id, data)
+                    # Defer stop actions until after cleaning up played_information to prevent race condition
+                    items_to_prompt.append((jellyfin_item_id, dict(data)))
 
                 clear_entries.append(item)
 
@@ -1165,10 +1186,30 @@ def stop_all_playback():
                 url = "/Videos/ActiveEncodings?DeviceId=%s&playSessionId=%s" % (device_id, play_session_id)
                 api.delete(url)
 
-    for entry in clear_entries:
-        del played_information[entry]
+    # Re-read played_information to preserve any entries added concurrently (e.g., next episode)
+    current_info_str = home_window.get_property('played_information')
+    if current_info_str:
+        try:
+            current_played_info = json.loads(current_info_str)
+        except (ValueError, TypeError):
+            current_played_info = played_information
+    else:
+        current_played_info = played_information
 
-    home_window.set_property('played_information', json.dumps(played_information))
+    for entry in clear_entries:
+        if entry in current_played_info:
+            del current_played_info[entry]
+
+    home_window.set_property('played_information', json.dumps(current_played_info))
+
+    # Only clear now_playing if Kodi is not actively playing a Jellyfin item
+    if not is_jellyfin_playing:
+        home_window.clear_property("currently_playing_id")
+        home_window.clear_property("now_playing")
+
+    # Prompt user actions after played_information has been safely updated and saved
+    for jellyfin_item_id, prompt_data in items_to_prompt:
+        prompt_for_stop_actions(jellyfin_item_id, prompt_data)
 
 
 def get_playing_data():
