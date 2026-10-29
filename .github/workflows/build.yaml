@@ -8,10 +8,11 @@ on:
       - '*'
   workflow_dispatch:
     inputs:
-        target_branch:
-          description: 'Which branch should I build?'
-          required: true
-          default: ''
+      branch:
+        description: 'Branch or tag to build'
+        required: true
+        default: 'master'
+        type: string
 
 jobs:
   build:
@@ -23,8 +24,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # This grabs your manual input OR falls back to the default push/tag ref
-          ref: ${{ inputs.target_branch || github.ref }}
+          ref: ${{ inputs.branch || github.ref }}
+
+      - name: Log checked out ref
+        run: git log -1 --oneline
 
       - name: Set up Python 3.x
         uses: actions/setup-python@v5
