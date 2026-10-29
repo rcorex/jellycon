@@ -37,8 +37,8 @@ class API:
 
         url = '{}{}'.format(self.server, path)
 
-        r = requests.get(url, headers=self.headers, verify=self.verify_cert)
         try:
+            r = requests.get(url, headers=self.headers, verify=self.verify_cert, timeout=(5,60))
             try:
                 '''
                 The requests library defaults to using simplejson to handle
@@ -51,7 +51,7 @@ class API:
                 response_data = json.loads(r.text)
             except ValueError:
                 response_data = r.json()
-        except:  # noqa
+        except Exception:
             response_data = {}
         return response_data
 
@@ -61,14 +61,14 @@ class API:
 
         url = '{}{}'.format(self.server, url)
 
-        r = requests.post(url, json=payload, headers=self.headers, verify=self.verify_cert)
         try:
+            r = requests.post(url, json=payload, headers=self.headers, verify=self.verify_cert, timeout=5)
             try:
                 # Much faster on low power devices, see above comment
                 response_data = json.loads(r.text)
             except ValueError:
                 response_data = r.json()
-        except:  # noqa
+        except Exception:
             response_data = {}
         return response_data
 
@@ -78,7 +78,10 @@ class API:
 
         url = '{}{}'.format(self.server, url)
 
-        requests.delete(url, headers=self.headers, verify=self.verify_cert)
+        try:
+            requests.delete(url, headers=self.headers, verify=self.verify_cert, timeout=5)
+        except Exception:
+            pass
 
     def authenticate(self, auth_data):
         # Always force create fresh headers during authentication
@@ -123,7 +126,7 @@ class API:
 
         # If we have a valid token, ensure it's included in the headers unless we're regenerating
         if self.token and force is False:
-            headers['Authorization'] += ", Token={}".format(self.token)
+            headers['Authorization'] += ', Token="{}"'.format(self.token)
         else:
             # Check for updated credentials since initialization
             user_details = load_user_details()
@@ -131,6 +134,9 @@ class API:
             if token:
                 self.token = token
                 headers['Authorization'] += ", Token={}".format(self.token)
+
+        # Kodi doesn't support br or zstd compression, exclude them
+        headers['Accept-Encoding'] = 'gzip, deflate'
 
         # Make headers available to api calls
         self.headers = headers
