@@ -152,10 +152,18 @@ class PlayNextDialog(xbmcgui.WindowXMLDialog):
     action_exitkeys_id = None
     episode_info = None
     play_called = False
+    is_modal = False
+    is_open = False
 
     def __init__(self, *args, **kwargs):
         log.debug("PlayNextDialog: __init__")
+        self.is_open = True
+        self.play_called = False
         xbmcgui.WindowXMLDialog.__init__(self, *args, **kwargs)
+
+    def close(self):
+        self.is_open = False
+        xbmcgui.WindowXMLDialog.close(self)
 
     def onInit(self):
         log.debug("PlayNextDialog: onInit")
@@ -195,17 +203,21 @@ class PlayNextDialog(xbmcgui.WindowXMLDialog):
             log.debug("PlayNextDialog: Play Next Episode")
             # Mark dialog as confirmed so prompt_for_stop_actions does not trigger Container.Refresh
             self.play_called = True
-            next_item_id = self.episode_info.get("Id")
+            next_item_id = self.episode_info.get("Id") if self.episode_info else None
             if next_item_id:
                 home_window = HomeWindow()
                 home_window.set_property('play_next_triggered', str(next_item_id))
             self.close()
-            log.debug("Playing Next Episode: {0}".format(next_item_id))
-            play_info = {}
-            play_info["item_id"] = next_item_id
-            play_info["auto_resume"] = "-1"
-            play_info["force_transcode"] = False
-            send_event_notification("jellycon_play_action", play_info)
+            # Only send play notification directly if running as a modeless dialog (from PlayNextService).
+            # For modal dialogs (prompt_for_stop_actions), playback must be dispatched AFTER doModal() returns.
+            if not self.is_modal and next_item_id:
+                log.debug("Playing Next Episode: {0}".format(next_item_id))
+                play_info = {
+                    "item_id": next_item_id,
+                    "auto_resume": "-1",
+                    "force_transcode": False
+                }
+                send_event_notification("jellycon_play_action", play_info)
         elif control_id == 3014:
             if self.episode_info and self.episode_info.get("Id"):
                 home_window = HomeWindow()
@@ -225,7 +237,7 @@ class SkipDialog(xbmcgui.WindowXMLDialog):
     media_id = None
     start = None
     end = None
-    
+
     has_been_dismissed_or_skipped = False
 
     def __init__(self, *args, **kwargs):
@@ -266,7 +278,7 @@ class SkipDialog(xbmcgui.WindowXMLDialog):
 
     def get_play_called(self):
         return self.play_called
-    
+
     def is_button_shown(self):
         try:
             self.getFocus()

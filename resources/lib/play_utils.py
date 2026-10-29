@@ -233,8 +233,6 @@ def play_file(play_info):
 
     channel_id = None
     home_window = HomeWindow()
-    home_window.clear_property('play_next_triggered')
-    home_window.clear_property('play_next_dismissed')
     last_url = home_window.get_property("last_content_url")
     if last_url:
         home_window.set_property("skip_cache_for_" + last_url, "true")
@@ -1143,18 +1141,34 @@ def prompt_for_stop_actions(item_id, data):
 
             play_next_dialog = PlayNextDialog("PlayNextDialog.xml", plugin_path_real, "default", "720p")
             play_next_dialog.set_episode_info(next_episode)
+            play_next_dialog.is_modal = True
             play_next_dialog.doModal()
 
-            if not play_next_dialog.get_play_called():
+            play_called = play_next_dialog.get_play_called()
+            del play_next_dialog
+
+            next_ep_id = next_episode.get("Id") if next_episode else None
+            if play_called and next_ep_id:
+                play_info = {
+                    "item_id": next_ep_id,
+                    "auto_resume": "-1",
+                    "force_transcode": False
+                }
+                send_event_notification("jellycon_play_action", play_info)
+            else:
                 xbmc.executebuiltin("Container.Refresh")
 
         else:
-            play_info = {
-                "item_id": next_episode.get("Id"),
-                "auto_resume": "-1",
-                "force_transcode": False
-            }
-            send_event_notification("jellycon_play_action", play_info)
+            next_ep_id = next_episode.get("Id") if next_episode else None
+            if next_ep_id:
+                home_window = HomeWindow()
+                home_window.set_property('play_next_triggered', str(next_ep_id))
+                play_info = {
+                    "item_id": next_ep_id,
+                    "auto_resume": "-1",
+                    "force_transcode": False
+                }
+                send_event_notification("jellycon_play_action", play_info)
 
 
 def stop_all_playback():

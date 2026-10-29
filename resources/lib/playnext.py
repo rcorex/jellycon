@@ -61,7 +61,15 @@ class PlayNextService(threading.Thread):
                 trigger_time = play_next_trigger_time  # 300
                 time_to_end = (duration - position)
 
-                if not play_next_triggered and (trigger_time > time_to_end) and play_next_dialog is None:
+                if play_next_dialog is not None and not play_next_dialog.is_open:
+                    del play_next_dialog
+                    play_next_dialog = None
+
+                if (trigger_time > 0 and
+                        not play_next_triggered and
+                        duration > trigger_time and
+                        0 < time_to_end <= trigger_time and
+                        play_next_dialog is None):
                     play_next_triggered = True
                     log.debug("play_next_triggered hit at {0} seconds from end".format(time_to_end))
 
