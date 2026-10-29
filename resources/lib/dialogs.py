@@ -7,6 +7,7 @@ import xbmc
 
 
 from .lazylogger import LazyLogger
+from .kodi_utils import HomeWindow
 from .utils import seconds_to_ticks, ticks_to_seconds, translate_string, send_event_notification
 
 log = LazyLogger(__name__)
@@ -21,7 +22,7 @@ class BitrateDialog(xbmcgui.WindowXMLDialog):
 
     def __init__(self, *args, **kwargs):
         log.debug("BitrateDialog: __init__")
-        xbmcgui.WindowXML.__init__(self, *args, **kwargs)
+        xbmcgui.WindowXMLDialog.__init__(self, *args, **kwargs)
 
     def onInit(self):
         log.debug("ActionMenu: onInit")
@@ -107,7 +108,7 @@ class SafeDeleteDialog(xbmcgui.WindowXMLDialog):
 
     def __init__(self, *args, **kwargs):
         log.debug("SafeDeleteDialog: __init__")
-        xbmcgui.WindowXML.__init__(self, *args, **kwargs)
+        xbmcgui.WindowXMLDialog.__init__(self, *args, **kwargs)
 
     def onInit(self):
         log.debug("SafeDeleteDialog: onInit")
@@ -154,7 +155,7 @@ class PlayNextDialog(xbmcgui.WindowXMLDialog):
 
     def __init__(self, *args, **kwargs):
         log.debug("PlayNextDialog: __init__")
-        xbmcgui.WindowXML.__init__(self, *args, **kwargs)
+        xbmcgui.WindowXMLDialog.__init__(self, *args, **kwargs)
 
     def onInit(self):
         log.debug("PlayNextDialog: onInit")
@@ -181,9 +182,10 @@ class PlayNextDialog(xbmcgui.WindowXMLDialog):
 
     def onAction(self, action):
 
-        if action.getId() == 10:  # ACTION_PREVIOUS_MENU
-            self.close()
-        elif action.getId() == 92:  # ACTION_NAV_BACK
+        if action.getId() in (10, 92):  # ACTION_PREVIOUS_MENU, ACTION_NAV_BACK
+            if self.episode_info and self.episode_info.get("Id"):
+                home_window = HomeWindow()
+                home_window.set_property('play_next_dismissed', str(self.episode_info.get("Id")))
             self.close()
         else:
             log.debug("PlayNextDialog: onAction: {0}".format(action.getId()))
@@ -193,8 +195,11 @@ class PlayNextDialog(xbmcgui.WindowXMLDialog):
             log.debug("PlayNextDialog: Play Next Episode")
             # Mark dialog as confirmed so prompt_for_stop_actions does not trigger Container.Refresh
             self.play_called = True
-            self.close()
             next_item_id = self.episode_info.get("Id")
+            if next_item_id:
+                home_window = HomeWindow()
+                home_window.set_property('play_next_triggered', str(next_item_id))
+            self.close()
             log.debug("Playing Next Episode: {0}".format(next_item_id))
             play_info = {}
             play_info["item_id"] = next_item_id
@@ -202,6 +207,9 @@ class PlayNextDialog(xbmcgui.WindowXMLDialog):
             play_info["force_transcode"] = False
             send_event_notification("jellycon_play_action", play_info)
         elif control_id == 3014:
+            if self.episode_info and self.episode_info.get("Id"):
+                home_window = HomeWindow()
+                home_window.set_property('play_next_dismissed', str(self.episode_info.get("Id")))
             self.close()
 
     def set_episode_info(self, info):
@@ -209,6 +217,7 @@ class PlayNextDialog(xbmcgui.WindowXMLDialog):
 
     def get_play_called(self):
         return self.play_called
+
 
 class SkipDialog(xbmcgui.WindowXMLDialog):
 
@@ -221,7 +230,7 @@ class SkipDialog(xbmcgui.WindowXMLDialog):
 
     def __init__(self, *args, **kwargs):
         log.debug("SkipDialog: __init__")
-        xbmcgui.WindowXML.__init__(self, *args, **kwargs)
+        xbmcgui.WindowXMLDialog.__init__(self, *args, **kwargs)
 
     def onInit(self):
         log.debug("SkipDialog: onInit")

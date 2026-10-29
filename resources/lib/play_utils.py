@@ -233,6 +233,8 @@ def play_file(play_info):
 
     channel_id = None
     home_window = HomeWindow()
+    home_window.clear_property('play_next_triggered')
+    home_window.clear_property('play_next_dismissed')
     last_url = home_window.get_property("last_content_url")
     if last_url:
         home_window.set_property("skip_cache_for_" + last_url, "true")
@@ -501,6 +503,8 @@ def play_file(play_info):
                 break
 
     home_window.set_property('now_playing', json.dumps(data))
+    home_window.set_property('last_playback_data', json.dumps(data))
+    home_window.set_property('currently_playing_id', str(item_id))
 
     list_item.setPath(playurl)
     list_item = set_list_item_props(item_id, list_item, result, server, listitem_props, item_title)
@@ -1103,6 +1107,36 @@ def prompt_for_stop_actions(item_id, data):
             item_type == "Episode" and
             percentage_complete >= prompt_next_percentage):
 
+        home_window = HomeWindow()
+        next_ep_id = str(next_episode.get("Id", ""))
+        play_next_triggered = home_window.get_property('play_next_triggered')
+        play_next_dismissed = home_window.get_property('play_next_dismissed')
+        now_playing_str = home_window.get_property('now_playing')
+        now_playing_id = ""
+        if now_playing_str:
+            try:
+                now_playing_id = str(json.loads(now_playing_str).get("item_id", ""))
+            except (ValueError, TypeError):
+                pass
+
+        player = xbmc.Player()
+        is_playing = player.isPlaying()
+        current_playing_file = ""
+        if is_playing:
+            try:
+                current_playing_file = player.getPlayingFile()
+            except Exception:
+                pass
+
+        if (next_ep_id and play_next_triggered == next_ep_id) or \
+           (next_ep_id and now_playing_id == next_ep_id) or \
+           (next_ep_id and play_next_dismissed == next_ep_id) or \
+           (next_ep_id and is_playing and current_playing_file and next_ep_id in current_playing_file) or \
+           (now_playing_id and now_playing_id != str(item_id)) or \
+           (play_next_triggered and play_next_triggered != str(item_id)):
+            log.debug("prompt_for_stop_actions: next episode already queued, playing, or dismissed; skipping prompt")
+            return
+
         if play_prompt:
             plugin_path = settings.getAddonInfo('path')
             plugin_path_real = translate_path(os.path.join(plugin_path))
@@ -1155,11 +1189,22 @@ def stop_all_playback():
 
     server = settings.getSetting('server_address')
     server_clean = server.rstrip('/') if server else ""
-    is_jellyfin_playing = is_playing and bool(current_playing_file) and bool(server_clean) and (server_clean in current_playing_file)
+    is_jellyfin_playing = (
+        is_playing and bool(current_playing_file) and bool(server_clean) and (server_clean in current_playing_file)
+    )
+
+    play_data_string = home_window.get_property('now_playing')
+    now_playing_data = {}
+    if play_data_string:
+        try:
+            now_playing_data = json.loads(play_data_string)
+        except (ValueError, TypeError):
+            now_playing_data = {}
+    now_playing_id = str(now_playing_data.get("item_id", ""))
+    next_triggered_id = home_window.get_property('play_next_triggered')
 
     # Persist last played data so active playback can be recovered across media restarts
-    play_data_string = home_window.get_property('now_playing')
-    if play_data_string:
+    if play_data_string and not next_triggered_id:
         home_window.set_property('last_playback_data', play_data_string)
 
     clear_entries = []
@@ -1170,13 +1215,18 @@ def stop_all_playback():
         if not data:
             continue
         if data.get("currently_playing", False) is True:
+            item_id_str = str(data.get("item_id", ""))
             # Skip stopping if Kodi is still actively playing this item
-            if is_jellyfin_playing and data.get("item_id") and data.get("item_id") in current_playing_file:
+            if is_playing and item_id_str and (
+                (bool(current_playing_file) and item_id_str in current_playing_file) or
+                (is_jellyfin_playing and item_id_str == now_playing_id)
+            ):
                 log.debug("stop_all_playback: item {0} is currently playing, skipping stop".format(data.get("item_id")))
                 continue
 
             log.debug("item_data: {0}".format(data))
-            home_window.set_property('last_playback_data', json.dumps(data))
+            if not next_triggered_id and (not now_playing_id or now_playing_id == item_id_str):
+                home_window.set_property('last_playback_data', json.dumps(data))
 
             current_position = data.get("current_position", 0)
             jellyfin_item_id = data.get("item_id")
@@ -1212,13 +1262,41 @@ def stop_all_playback():
 
     home_window.set_property('played_information', json.dumps(current_played_info))
 
-    # Only clear now_playing if Kodi is not actively playing a Jellyfin item
-    if not is_jellyfin_playing:
+    # Only clear now_playing if the stopped item was the currently playing item,
+    # no new item was triggered, and Kodi is not actively playing the item.
+    clear_entries_str = [str(e) for e in clear_entries]
+    should_clear_now_playing = False
+    if not next_triggered_id:
+        if not now_playing_id or now_playing_id in clear_entries_str:
+            if not is_jellyfin_playing:
+                should_clear_now_playing = True
+            elif current_playing_file and now_playing_id and now_playing_id not in current_playing_file:
+                should_clear_now_playing = True
+
+    if should_clear_now_playing:
         home_window.clear_property("currently_playing_id")
         home_window.clear_property("now_playing")
 
     # Prompt user actions after played_information has been safely updated and saved
     for jellyfin_item_id, prompt_data in items_to_prompt:
+        next_episode = prompt_data.get("next_episode")
+        next_ep_id = str(next_episode.get("Id", "")) if (next_episode and next_episode.get("Id")) else ""
+
+        # Skip prompt if next episode is already triggered, already in now_playing, dismissed, or actively playing
+        if next_ep_id:
+            if (next_triggered_id and next_triggered_id == next_ep_id) or \
+               (now_playing_id and now_playing_id == next_ep_id) or \
+               (home_window.get_property('play_next_dismissed') == next_ep_id) or \
+               (is_playing and bool(current_playing_file) and next_ep_id in current_playing_file):
+                log.debug("stop_all_playback: next episode {0} already active/dismissed, skipping prompt".format(next_ep_id))
+                continue
+
+        # Also skip prompt if a new playback item is already active or pending
+        if (now_playing_id and now_playing_id != str(jellyfin_item_id)) or \
+           (next_triggered_id and next_triggered_id != str(jellyfin_item_id)):
+            log.debug("stop_all_playback: new playback already active/pending, skipping prompt")
+            continue
+
         prompt_for_stop_actions(jellyfin_item_id, prompt_data)
 
 
@@ -1235,8 +1313,7 @@ def get_playing_data():
 
     server = settings.getSetting('server_address')
     server_clean = server.rstrip('/') if server else ""
-    if not server_clean or server_clean not in playing_file:
-        return {}
+    is_jellyfin_stream = bool(server_clean and server_clean in playing_file)
 
     play_data_string = home_window.get_property('now_playing')
     play_data = {}
@@ -1245,6 +1322,12 @@ def get_playing_data():
             play_data = json.loads(play_data_string)
         except (ValueError, TypeError):
             play_data = {}
+
+    allow_direct_file_play = settings.getSetting('allow_direct_file_play') == 'true'
+    is_direct_play = allow_direct_file_play and bool(play_data.get("item_id"))
+
+    if not is_jellyfin_stream and not is_direct_play:
+        return {}
 
     played_information_string = home_window.get_property('played_information')
     if played_information_string:
@@ -1506,6 +1589,8 @@ class Service(xbmc.Player):
             return
 
         home_window = HomeWindow()
+        home_window.clear_property('play_next_triggered')
+        home_window.clear_property('play_next_dismissed')
         played_information_string = home_window.get_property('played_information')
         # Safely parse JSON in case played_information property is empty
         if played_information_string:

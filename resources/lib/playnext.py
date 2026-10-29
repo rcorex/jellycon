@@ -49,6 +49,9 @@ class PlayNextService(threading.Thread):
                 now_playing_file = player.getPlayingFile()
                 if now_playing_file != now_playing:
                     # If the playing file has changed, reset the play next values
+                    if play_next_dialog is not None:
+                        play_next_dialog.close()
+                        del play_next_dialog
                     play_next_dialog = None
                     play_next_triggered = False
                     now_playing = now_playing_file
