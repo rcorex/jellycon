@@ -1128,7 +1128,11 @@ def stop_all_playback():
     home_window = HomeWindow()
     played_information_string = home_window.get_property('played_information')
     if played_information_string:
-        played_information = json.loads(played_information_string)
+        # Guard against malformed JSON or empty string when reading playback tracking data
+        try:
+            played_information = json.loads(played_information_string)
+        except (ValueError, TypeError):
+            played_information = {}
     else:
         played_information = {}
 
@@ -1153,6 +1157,11 @@ def stop_all_playback():
     server_clean = server.rstrip('/') if server else ""
     is_jellyfin_playing = is_playing and bool(current_playing_file) and bool(server_clean) and (server_clean in current_playing_file)
 
+    # Persist last played data so active playback can be recovered across media restarts
+    play_data_string = home_window.get_property('now_playing')
+    if play_data_string:
+        home_window.set_property('last_playback_data', play_data_string)
+
     clear_entries = []
     items_to_prompt = []
 
@@ -1167,6 +1176,7 @@ def stop_all_playback():
                 continue
 
             log.debug("item_data: {0}".format(data))
+            home_window.set_property('last_playback_data', json.dumps(data))
 
             current_position = data.get("current_position", 0)
             jellyfin_item_id = data.get("item_id")
@@ -1215,49 +1225,106 @@ def stop_all_playback():
 def get_playing_data():
     player = xbmc.Player()
     home_window = HomeWindow()
-    play_data_string = home_window.get_property('now_playing')
-    try:
-        play_data = json.loads(play_data_string)
-    except ValueError:
-        # This isn't a JellyCon item
-        return {}
 
-    played_information_string = home_window.get_property('played_information')
-    if played_information_string:
-        played_information = json.loads(played_information_string)
-    else:
-        played_information = {}
-
-    playlist_data_string = home_window.get_property('playlist')
-    if playlist_data_string:
-        playlist_data = json.loads(playlist_data_string)
-    else:
-        playlist_data = {}
-
-    item_id = play_data.get("item_id")
-
-    server = settings.getSetting('server_address')
+    # Bail out early if player is not active or file is not from the Jellyfin server
     try:
         playing_file = player.getPlayingFile()
     except Exception as e:
         log.error("get_playing_data : getPlayingFile() : {0}".format(e))
         return {}
-    log.debug("get_playing_data : getPlayingFile() : {0}".format(playing_file))
-    if server in playing_file and item_id is not None:
-        play_time = player.getTime()
-        total_play_time = player.getTotalTime()
 
-        if item_id is not None and item_id not in playing_file and playing_file in playlist_data:
-            # if the current now_playing data isn't correct, pull it from the playlist_data
+    server = settings.getSetting('server_address')
+    server_clean = server.rstrip('/') if server else ""
+    if not server_clean or server_clean not in playing_file:
+        return {}
+
+    play_data_string = home_window.get_property('now_playing')
+    play_data = {}
+    if play_data_string:
+        try:
+            play_data = json.loads(play_data_string)
+        except (ValueError, TypeError):
+            play_data = {}
+
+    played_information_string = home_window.get_property('played_information')
+    if played_information_string:
+        try:
+            played_information = json.loads(played_information_string)
+        except (ValueError, TypeError):
+            played_information = {}
+    else:
+        played_information = {}
+
+    playlist_data_string = home_window.get_property('playlist')
+    if playlist_data_string:
+        try:
+            playlist_data = json.loads(playlist_data_string)
+        except (ValueError, TypeError):
+            playlist_data = {}
+    else:
+        playlist_data = {}
+
+    item_id = play_data.get("item_id")
+
+    # If now_playing is missing or doesn't match the current file (e.g. after media restart), recover it
+    if not item_id or item_id not in playing_file:
+        # Check if the active file is in queued playlist data
+        if playing_file in playlist_data:
             play_data = playlist_data.pop(playing_file)
-            # Update now_playing data
             home_window.set_property('playlist', json.dumps(playlist_data))
+            item_id = play_data.get("item_id")
 
+        # Check existing played_information
+        if not item_id or item_id not in playing_file:
+            for p_id, p_data in played_information.items():
+                if p_id and p_id in playing_file:
+                    play_data = dict(p_data)
+                    item_id = p_id
+                    break
+
+        # Check last_playback_data saved before stop/restart
+        if not item_id or item_id not in playing_file:
+            last_playback_str = home_window.get_property('last_playback_data')
+            if last_playback_str:
+                try:
+                    last_data = json.loads(last_playback_str)
+                    if last_data.get("item_id") and last_data.get("item_id") in playing_file:
+                        play_data = dict(last_data)
+                        item_id = play_data.get("item_id")
+                except (ValueError, TypeError):
+                    pass
+
+        # Fallback: extract item_id from the stream URL path
+        if not item_id or item_id not in playing_file:
+            match = re.search(r'/(?:Videos|Audio)/([^/?]+)', playing_file)
+            if match:
+                extracted_id = match.group(1)
+                last_playback_str = home_window.get_property('last_playback_data')
+                if last_playback_str:
+                    try:
+                        last_data = json.loads(last_playback_str)
+                        if last_data.get("item_id") == extracted_id:
+                            play_data = dict(last_data)
+                            item_id = extracted_id
+                    except (ValueError, TypeError):
+                        pass
+
+    if item_id is not None:
+        try:
+            play_time = player.getTime()
+            total_play_time = player.getTotalTime()
+        except Exception:
+            play_time = play_data.get("current_position", 0)
+            total_play_time = play_data.get("duration", 0)
+
+        # Restore now_playing and played_information for continued tracking
+        play_data["currently_playing"] = True
         play_data["current_position"] = play_time
         play_data["duration"] = total_play_time
         played_information[item_id] = play_data
         home_window.set_property('now_playing', json.dumps(play_data))
         home_window.set_property('played_information', json.dumps(played_information))
+        home_window.set_property('currently_playing_id', str(item_id))
         return play_data
 
     return {}
@@ -1440,7 +1507,14 @@ class Service(xbmc.Player):
 
         home_window = HomeWindow()
         played_information_string = home_window.get_property('played_information')
-        played_information = json.loads(played_information_string)
+        # Safely parse JSON in case played_information property is empty
+        if played_information_string:
+            try:
+                played_information = json.loads(played_information_string)
+            except (ValueError, TypeError):
+                played_information = {}
+        else:
+            played_information = {}
         played_information[jellyfin_item_id] = play_data
         home_window.set_property('played_information', json.dumps(played_information))
 
