@@ -38,29 +38,39 @@
 		</control>
 
 		<control type="button" id="3013">
-			<left>1020</left>
-			<top>-8</top>
-			<width>150</width>
-			<height>65</height>
+			<left>980</left>
+			<top>6</top>
+			<width>130</width>
+			<height>40</height>
 			<visible>true</visible>
 			<label>Play Next</label>
 			<align>center</align>
-			<texture border="1" colordiffuse="ff161616">white.png</texture>
+			<texturenofocus border="1" colordiffuse="ff161616">white.png</texturenofocus>
+			<texturefocus border="1" colordiffuse="button_focus">white.png</texturefocus>
 			<font>font12</font>
+			<focusedcolor>FFFFFFFF</focusedcolor>
 			<onright>3014</onright>
+			<onleft>3014</onleft>
+			<onup>3013</onup>
+			<ondown>3013</ondown>
 		</control>
 
 		<control type="button" id="3014">
-			<left>1140</left>
-			<top>-8</top>
-			<width>150</width>
-			<height>65</height>
+			<left>1130</left>
+			<top>6</top>
+			<width>130</width>
+			<height>40</height>
 			<visible>true</visible>
 			<label>Close</label>
 			<align>center</align>
-			<texture border="1" colordiffuse="ff161616">white.png</texture>
+			<texturenofocus border="1" colordiffuse="ff161616">white.png</texturenofocus>
+			<texturefocus border="1" colordiffuse="button_focus">white.png</texturefocus>
 			<font>font12</font>
+			<focusedcolor>FFFFFFFF</focusedcolor>
 			<onleft>3013</onleft>
+			<onright>3013</onright>
+			<onup>3014</onup>
+			<ondown>3014</ondown>
 		</control>
 
 	</controls>

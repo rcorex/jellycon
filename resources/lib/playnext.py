@@ -23,6 +23,7 @@ class PlayNextService(threading.Thread):
     def __init__(self, play_monitor):
         super(PlayNextService, self).__init__()
         self.monitor = play_monitor
+        self.ready_to_trigger = False
 
     def run(self):
 
@@ -46,11 +47,16 @@ class PlayNextService(threading.Thread):
                     play_next_trigger_time = int(settings.getSetting('play_next_trigger_time'))
                     log.debug("New play_next_trigger_time value: {0}".format(play_next_trigger_time))
 
-                now_playing_file = player.getPlayingFile()
+                try:
+                    now_playing_file = player.getPlayingFile()
+                except Exception:
+                    now_playing_file = None
+
                 if now_playing_file != now_playing:
                     # If the playing file has changed, reset the play next values
                     play_next_dialog = None
                     play_next_triggered = False
+                    self.ready_to_trigger = False
                     now_playing = now_playing_file
 
                 duration = player.getTotalTime()
@@ -58,8 +64,15 @@ class PlayNextService(threading.Thread):
                 trigger_time = play_next_trigger_time  # 300
                 time_to_end = (duration - position)
 
-                if not play_next_triggered and (trigger_time > time_to_end) and play_next_dialog is None:
+                self.ready_to_trigger = self.ready_to_trigger or (duration > trigger_time and time_to_end > trigger_time)
+
+                # Ensure stream headers have been parsed (duration > trigger_time), playback has
+                # been observed outside the trigger window (ready_to_trigger), and has not reached EOF.
+                if (not play_next_triggered and self.ready_to_trigger and
+                        duration > trigger_time and 0 < time_to_end <= trigger_time and
+                        play_next_dialog is None):
                     play_next_triggered = True
+                    self.ready_to_trigger = False
                     log.debug("play_next_triggered hit at {0} seconds from end".format(time_to_end))
 
                     play_data = get_playing_data()
@@ -83,6 +96,7 @@ class PlayNextService(threading.Thread):
 
             else:
                 play_next_triggered = False
+                self.ready_to_trigger = False
                 if play_next_dialog is not None:
                     play_next_dialog.close()
                     del play_next_dialog
