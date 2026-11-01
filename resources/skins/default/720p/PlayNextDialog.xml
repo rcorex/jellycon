@@ -9,6 +9,7 @@
 	</coordinates>
     <controls>
 
+		<!-- Top bar background -->
 		<control type="image" id="3010">
 			<left>0</left>
 			<top>0</top>
@@ -17,6 +18,7 @@
 			<texture border="0" colordiffuse="BBFFFFFF">bg.png</texture>
 		</control>
 
+		<!-- Series title label (populated by PlayNextDialog.onInit) -->
 		<control type="label" id="3011">
 			<left>20</left>
 			<top>0</top>
@@ -27,6 +29,7 @@
 			<align>left</align>
 		</control>
 
+		<!-- Next episode title label (populated by PlayNextDialog.onInit) -->
 		<control type="label" id="3012">
 			<left>390</left>
 			<top>5</top>
@@ -37,30 +40,42 @@
 			<align>center</align>
 		</control>
 
+		<!-- "Play Next" button with focus/unfocus textures and 4-way remote navigation -->
 		<control type="button" id="3013">
-			<left>1020</left>
-			<top>-8</top>
-			<width>150</width>
-			<height>65</height>
+			<left>980</left>
+			<top>6</top>
+			<width>130</width>
+			<height>40</height>
 			<visible>true</visible>
 			<label>Play Next</label>
 			<align>center</align>
-			<texture border="1" colordiffuse="ff161616">white.png</texture>
+			<texturenofocus border="1" colordiffuse="ff161616">white.png</texturenofocus>
+			<texturefocus border="1" colordiffuse="ff525252">white.png</texturefocus>
 			<font>font12</font>
+			<focusedcolor>FFFFFFFF</focusedcolor>
 			<onright>3014</onright>
+			<onleft>3014</onleft>
+			<onup>3013</onup>
+			<ondown>3013</ondown>
 		</control>
 
+		<!-- "Close" button with focus/unfocus textures and 4-way remote navigation -->
 		<control type="button" id="3014">
-			<left>1140</left>
-			<top>-8</top>
-			<width>150</width>
-			<height>65</height>
+			<left>1130</left>
+			<top>6</top>
+			<width>130</width>
+			<height>40</height>
 			<visible>true</visible>
 			<label>Close</label>
 			<align>center</align>
-			<texture border="1" colordiffuse="ff161616">white.png</texture>
+			<texturenofocus border="1" colordiffuse="ff161616">white.png</texturenofocus>
+			<texturefocus border="1" colordiffuse="ff525252">white.png</texturefocus>
 			<font>font12</font>
+			<focusedcolor>FFFFFFFF</focusedcolor>
 			<onleft>3013</onleft>
+			<onright>3013</onright>
+			<onup>3014</onup>
+			<ondown>3014</ondown>
 		</control>
 
 	</controls>

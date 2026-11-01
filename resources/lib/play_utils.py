@@ -224,15 +224,45 @@ def play_file(play_info):
     If a jellycon item is already playing, report it's playback has stopped
     to the server to preserve accurate tracking
     """
+    home_window = HomeWindow()
+    item_id = play_info.get("item_id")
+    # Mark that a new play action is in flight across HomeWindow so stop_all_playback()
+    # skips duplicate post-playback prompts if the prior item finishes during metadata fetches.
+    if item_id and not isinstance(item_id, list):
+        home_window.set_property("jellycon_play_pending", str(item_id))
+
+    try:
+        return _play_file_internal(play_info, home_window, item_id)
+    finally:
+        # Always clear the pending marker even if metadata fetch or playback setup aborts early
+        home_window.clear_property("jellycon_play_pending")
+
+
+def _play_file_internal(play_info, home_window, item_id):
+    # Dismiss any active PlayNextDialog so modal focus is released before new playback starts
+    PlayNextDialog.close_active()
+
     if xbmc.Player().isPlaying():
         play_data = get_playing_data()
         if play_data:
             report_stopped_playback(play_data)
-
-    item_id = play_info.get("item_id")
+            # Remove the replaced item from played_information so an async stop_all_playback()
+            # callback cannot re-report or re-prompt for it while the next stream loads.
+            stopped_item_id = play_data.get("item_id")
+            if stopped_item_id:
+                played_info_str = home_window.get_property('played_information')
+                if played_info_str:
+                    try:
+                        played_info = json.loads(played_info_str)
+                        if stopped_item_id in played_info:
+                            played_info.pop(stopped_item_id)
+                            home_window.set_property('played_information', json.dumps(played_info))
+                    except Exception:
+                        pass
+        # Clear stale now_playing metadata before resolving the next item
+        home_window.clear_property("now_playing")
 
     channel_id = None
-    home_window = HomeWindow()
     last_url = home_window.get_property("last_content_url")
     if last_url:
         home_window.set_property("skip_cache_for_" + last_url, "true")
@@ -500,7 +530,11 @@ def play_file(play_info):
             if livestream_id:
                 break
 
+    # Publish new now_playing state and ensure any lingering PlayNextDialog is closed
+    # before handing playback off to Kodi's player.
     home_window.set_property('now_playing', json.dumps(data))
+    home_window.clear_property("jellycon_play_pending")
+    PlayNextDialog.close_active()
 
     list_item.setPath(playurl)
     list_item = set_list_item_props(item_id, list_item, result, server, listitem_props, item_title)
@@ -1104,6 +1138,11 @@ def prompt_for_stop_actions(item_id, data):
             percentage_complete >= prompt_next_percentage):
 
         if play_prompt:
+            # Skip prompt if next item is already playing (e.g. triggered by auto-play or UpNext)
+            if xbmc.Player().isPlaying():
+                log.debug("Playback is already active, skipping PlayNextDialog")
+                return
+
             plugin_path = settings.getAddonInfo('path')
             plugin_path_real = translate_path(os.path.join(plugin_path))
 
@@ -1111,7 +1150,12 @@ def prompt_for_stop_actions(item_id, data):
             play_next_dialog.set_episode_info(next_episode)
             play_next_dialog.doModal()
 
-            if not play_next_dialog.get_play_called():
+            play_called = play_next_dialog.get_play_called()
+            # Explicitly delete dialog instance to clean up underlying C++ window in Kodi window manager
+            del play_next_dialog
+
+            # Only refresh the directory listing if the user dismissed without starting next playback
+            if not play_called and not xbmc.Player().isPlaying():
                 xbmc.executebuiltin("Container.Refresh")
 
         else:
@@ -1121,6 +1165,17 @@ def prompt_for_stop_actions(item_id, data):
                 "force_transcode": False
             }
             send_event_notification("jellycon_play_action", play_info)
+
+
+def _get_now_playing_id(home_window):
+    # Read item_id from HomeWindow's JSON now_playing property without raising on empty/invalid JSON
+    now_playing_string = home_window.get_property('now_playing')
+    if now_playing_string:
+        try:
+            return json.loads(now_playing_string).get('item_id')
+        except Exception:
+            pass
+    return None
 
 
 def stop_all_playback():
@@ -1140,8 +1195,9 @@ def stop_all_playback():
     log.debug("played_information: {0}".format(played_information))
     clear_entries = []
 
-    home_window.clear_property("currently_playing_id")
-    home_window.clear_property("now_playing")
+    # Check whether a new item is already queued in now_playing or in-flight in play_file()
+    now_playing_id = _get_now_playing_id(home_window)
+    play_pending_id = home_window.get_property("jellycon_play_pending")
 
     for item in played_information:
         data = played_information.get(item)
@@ -1154,8 +1210,16 @@ def stop_all_playback():
             if jellyfin_item_id is not None and current_position >= 0:
                 data["currently_playing"] = False
 
-                if data.get("play_action_type", "") == "play":
-                    prompt_for_stop_actions(jellyfin_item_id, data)
+                # Skip stop prompts when a new episode is already queued or loading, so
+                # transitioning episodes do not open a stale PlayNextDialog over the next stream.
+                if (data.get("play_action_type", "") == "play" and
+                        not play_pending_id and
+                        (now_playing_id is None or now_playing_id == jellyfin_item_id)):
+                    try:
+                        prompt_for_stop_actions(jellyfin_item_id, data)
+                    except Exception as e:
+                        # Prevent dialog errors from blocking cleanup of played_information or transcodes
+                        log.error("prompt_for_stop_actions error: {0}".format(e))
 
                 clear_entries.append(item)
 
@@ -1169,6 +1233,14 @@ def stop_all_playback():
         del played_information[entry]
 
     home_window.set_property('played_information', json.dumps(played_information))
+
+    # Only clear now_playing if it still references a stopped item, preserving metadata
+    # for any newly queued item that started while stop_all_playback() was running.
+    now_playing_id_current = _get_now_playing_id(home_window)
+
+    if now_playing_id_current is None or now_playing_id_current in clear_entries:
+        home_window.clear_property("currently_playing_id")
+        home_window.clear_property("now_playing")
 
 
 def get_playing_data():
@@ -1206,11 +1278,22 @@ def get_playing_data():
         play_time = player.getTime()
         total_play_time = player.getTotalTime()
 
-        if item_id is not None and item_id not in playing_file and playing_file in playlist_data:
-            # if the current now_playing data isn't correct, pull it from the playlist_data
-            play_data = playlist_data.pop(playing_file)
-            # Update now_playing data
-            home_window.set_property('playlist', json.dumps(playlist_data))
+        if item_id is not None and item_id not in playing_file:
+            if playing_file in playlist_data:
+                # if the current now_playing data isn't correct, pull it from the playlist_data
+                play_data = playlist_data.pop(playing_file)
+                item_id = play_data.get("item_id")
+                # Update now_playing data
+                home_window.set_property('playlist', json.dumps(playlist_data))
+            else:
+                # For DirectStream/Transcode, get_play_url() uses source_id in the URL path;
+                # if neither item_id nor source_id matches playing_file, Kodi is still on the
+                # previous stream while now_playing already holds the queued next item.
+                source_id = play_data.get("source_id") or ""
+                playback_type = play_data.get("playback_type")
+                if (playback_type in ("DirectStream", "Transcode") and
+                        (not source_id or source_id not in playing_file)):
+                    return {}
 
         play_data["current_position"] = play_time
         play_data["duration"] = total_play_time
@@ -1375,6 +1458,9 @@ class Service(xbmc.Player):
         log.debug("Starting monitor service: {0}".format(args))
 
     def onPlayBackStarted(self):
+        # Dismiss any lingering PlayNextDialog when playback begins
+        PlayNextDialog.close_active()
+
         # Will be called when xbmc starts playing a file
         if not xbmc.Player().isPlaying():
             log.debug("onPlayBackStarted: not playing file!")
