@@ -925,11 +925,20 @@ def play_action(params):
 
     action = params.get("action", "play")
 
-    # set the current playing item id
-    # set all the playback info, this will be picked up by the service
-    # the service will then start the playback
+    # Guard against duplicate concurrent play_action invocations for the same single item
+    # (e.g. caused by a double-click, remote key-repeat, or leaked Enter key when closing a dialog).
+    # jellycon_play_pending is stored on Kodi's HomeWindow (window 10000) so it is visible across
+    # separate plugin:// Python interpreter invocations as well as the background service.
+    home_window = HomeWindow()
+    pending_item_id = home_window.get_property("jellycon_play_pending")
+    if item_id and not isinstance(item_id, list) and pending_item_id == str(item_id):
+        log.info("Ignoring duplicate concurrent play_action for item_id: {0}".format(item_id))
+        return
 
-    xbmc.Player().stop()
+    # Stop any currently playing item only after verifying this is not a duplicate request,
+    # and only when starting new playback (not when merely appending an item to the playlist).
+    if action != "add_to_playlist":
+        xbmc.Player().stop()
 
     play_info = {}
     play_info["action"] = action

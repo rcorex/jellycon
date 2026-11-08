@@ -65,17 +65,48 @@ class BitrateDialog(xbmcgui.WindowXMLDialog):
             log.debug("ActionMenu: Selected Item: {0}".format(control_id))
 
 
+# Track the active ResumeDialog at module scope so external callers (e.g. Service.onPlayBackStarted)
+# can dismiss any lingering dialog, and so two instances never stack in Kodi's window manager.
+_active_resume_dialog = None
+
+
 class ResumeDialog(xbmcgui.WindowXMLDialog):
+    # Return code for getResumeAction(): -1 = cancelled, 0 = resume from timestamp, 1 = start from beginning
     resumePlay = -1
     resumeTimeStamp = ""
     action_exitkeys_id = None
 
     def __init__(self, *args, **kwargs):
+        global _active_resume_dialog
+        # Close any previously active ResumeDialog so duplicate instances never stack
+        if _active_resume_dialog is not None and _active_resume_dialog is not self:
+            try:
+                _active_resume_dialog.close()
+            except Exception:
+                pass
         xbmcgui.WindowXMLDialog.__init__(self, *args, **kwargs)
         log.debug("ResumeDialog INITIALISED")
+        self.resumePlay = -1
+        self._closed = False
+        _active_resume_dialog = self
+
+    def doModal(self):
+        global _active_resume_dialog
+        # Guard against opening a dialog that was already closed before doModal() was reached
+        if getattr(self, "_closed", False):
+            log.debug("ResumeDialog: doModal() skipped because dialog is already closed")
+            return
+        try:
+            super(ResumeDialog, self).doModal()
+        finally:
+            # Clear module-level reference on modal exit unless a newer instance already replaced it
+            if _active_resume_dialog is self:
+                _active_resume_dialog = None
 
     def onInit(self):
+        # Register standard exit actions (10 = ACTION_PREVIOUS_MENU, 13 = ACTION_STOP)
         self.action_exitkeys_id = [10, 13]
+        # Control 3010: "Resume from HH:MM:SS" button; Control 3011: "Start from beginning" button
         self.getControl(3010).setLabel(self.resumeTimeStamp)
         self.getControl(3011).setLabel(translate_string(30237))
 
@@ -85,14 +116,49 @@ class ResumeDialog(xbmcgui.WindowXMLDialog):
     def doAction(self, actionID):
         pass
 
+    def onAction(self, action):
+        # Explicitly handle Back / Previous Menu / Stop so the dialog closes cleanly with resumePlay = -1,
+        # signaling the caller to abort playback rather than starting from the beginning.
+        if action.getId() in (10, 13, 92):  # ACTION_PREVIOUS_MENU, ACTION_STOP, ACTION_NAV_BACK
+            self.close()
+
     def onClick(self, controlID):
+        # Ignore duplicate clicks or key-repeats while the dialog is already closing
+        if getattr(self, "_closed", False):
+            return
 
         if controlID == 3010:
+            # User chose to resume from the saved timestamp
             self.resumePlay = 0
             self.close()
-        if controlID == 3011:
+        elif controlID == 3011:
+            # User chose to start playback from the beginning
             self.resumePlay = 1
             self.close()
+
+    def close(self):
+        global _active_resume_dialog
+        if _active_resume_dialog is self:
+            _active_resume_dialog = None
+        # Mark closed before calling super().close() to block any concurrent onClick/doModal calls
+        self._closed = True
+        try:
+            super(ResumeDialog, self).close()
+        except Exception as e:
+            log.error("ResumeDialog: super().close() error: {0}".format(e))
+
+    @classmethod
+    def close_active(cls):
+        # Allows external callers (e.g. playback start events) to dismiss any lingering ResumeDialog
+        global _active_resume_dialog
+        dialog = _active_resume_dialog
+        _active_resume_dialog = None
+        if dialog is not None:
+            log.debug("ResumeDialog: close_active() closing active dialog")
+            try:
+                dialog.close()
+            except Exception as e:
+                log.error("ResumeDialog: close_active() error: {0}".format(e))
 
     def setResumeTime(self, timeStamp):
         self.resumeTimeStamp = timeStamp
