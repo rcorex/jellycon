@@ -226,15 +226,27 @@ def play_file(play_info):
     """
     home_window = HomeWindow()
     item_id = play_info.get("item_id")
-    # Mark that a new play action is in flight so stop_all_playback() does not open a duplicate
-    # modal PlayNextDialog if the previous item finishes while we are fetching playback info.
-    if item_id and not isinstance(item_id, list):
+    is_single_item = bool(item_id and not isinstance(item_id, list))
+
+    # Guard against duplicate concurrent play_file() calls for the same item (e.g. from a double-click,
+    # leaked Enter key press, or a direct service/notification caller bypassing play_action()) while a
+    # previous call is still fetching metadata or awaiting ResumeDialog input.
+    if is_single_item:
+        pending_id = home_window.get_property("jellycon_play_pending")
+        if pending_id == str(item_id):
+            log.info("play_file: ignoring duplicate concurrent playback request for item {0}".format(item_id))
+            return
+        # Mark that a new play action is in flight so stop_all_playback() does not open a duplicate
+        # modal PlayNextDialog if the previous item finishes while we are fetching playback info.
         home_window.set_property("jellycon_play_pending", str(item_id))
 
     try:
         return _play_file_internal(play_info, home_window, item_id)
     finally:
-        home_window.clear_property("jellycon_play_pending")
+        # Only clear jellycon_play_pending if it still belongs to this item so an ignored
+        # duplicate call returning early never clears the active invocation's pending flag.
+        if is_single_item and home_window.get_property("jellycon_play_pending") == str(item_id):
+            home_window.clear_property("jellycon_play_pending")
 
 
 def _play_file_internal(play_info, home_window, item_id):
@@ -374,6 +386,44 @@ def _play_file_internal(play_info, home_window, item_id):
         action_menu.doModal()
         return
 
+    seek_time = 0
+    auto_resume = int(auto_resume)
+
+    # Process user data for resume points before requesting PlaybackInfo from the server.
+    # Prompting early minimizes the network latency window before ResumeDialog appears and
+    # avoids an unnecessary POST /PlaybackInfo request if the user cancels the dialog.
+    # Jellyfin reports positions in ticks (10,000,000 ticks = 1 second).
+    if auto_resume != -1:
+        # Caller supplied an explicit resume position in ticks
+        seek_time = (auto_resume / 1000) / 10000
+
+    elif force_auto_resume:
+        # Add-on setting forces automatic resume from the server's saved position without prompting
+        user_data = result.get("UserData")
+        reasonable_ticks = int(user_data.get("PlaybackPositionTicks")) / 1000
+        seek_time = reasonable_ticks / 10000
+
+    else:
+        user_data = result.get("UserData")
+        if user_data.get("PlaybackPositionTicks") != 0:
+            # Prompt the user to either resume from the saved position or start from the beginning
+            reasonable_ticks = int(user_data.get("PlaybackPositionTicks")) / 1000
+            seek_time = round(reasonable_ticks / 10000, 0)
+            display_time = (datetime.datetime(1, 1, 1) + datetime.timedelta(seconds=seek_time)).strftime('%H:%M:%S')
+
+            resume_dialog = ResumeDialog("ResumeDialog.xml", addon_path, "default", "720p")
+            resume_dialog.setResumeTime("Resume from " + display_time)
+            resume_dialog.doModal()
+            # 0 = resume at seek_time, 1 = start from beginning, -1 = dialog cancelled/closed
+            resume_result = resume_dialog.getResumeAction()
+            del resume_dialog
+            log.debug("Resume Dialog Result: {0}".format(resume_result))
+
+            if resume_result == 1:
+                seek_time = 0
+            elif resume_result == -1:
+                return
+
     # get playback info from the server using the device profile
     playback_info = get_item_playback_info(item_id, force_transcode)
     if playback_info is None:
@@ -424,37 +474,6 @@ def _play_file_internal(play_info, home_window, item_id):
         return
 
     source_id = selected_media_source.get("Id")
-    seek_time = 0
-    auto_resume = int(auto_resume)
-
-    # process user data for resume points
-    if auto_resume != -1:
-        seek_time = (auto_resume / 1000) / 10000
-
-    elif force_auto_resume:
-        user_data = result.get("UserData")
-        reasonable_ticks = int(user_data.get("PlaybackPositionTicks")) / 1000
-        seek_time = reasonable_ticks / 10000
-
-    else:
-        user_data = result.get("UserData")
-        if user_data.get("PlaybackPositionTicks") != 0:
-
-            reasonable_ticks = int(user_data.get("PlaybackPositionTicks")) / 1000
-            seek_time = round(reasonable_ticks / 10000,0)
-            display_time = (datetime.datetime(1,1,1) + datetime.timedelta(seconds=seek_time)).strftime('%H:%M:%S')
-
-            resume_dialog = ResumeDialog("ResumeDialog.xml", addon_path, "default", "720p")
-            resume_dialog.setResumeTime("Resume from " + display_time)
-            resume_dialog.doModal()
-            resume_result = resume_dialog.getResumeAction()
-            del resume_dialog
-            log.debug("Resume Dialog Result: {0}".format(resume_result))
-
-            if resume_result == 1:
-                seek_time = 0
-            elif resume_result == -1:
-                return
 
     log.debug("play_session_id: {0}".format(play_session_id))
     playurl, playback_type, listitem_props = get_play_url(selected_media_source, play_session_id, channel_id)
@@ -527,9 +546,22 @@ def _play_file_internal(play_info, home_window, item_id):
             if livestream_id:
                 break
 
+    # Transition from pending state to active now_playing and dismiss any lingering modal
+    # dialogs before handing the ListItem off to Kodi's player.
     home_window.set_property('now_playing', json.dumps(data))
     home_window.clear_property("jellycon_play_pending")
     PlayNextDialog.close_active()
+    ResumeDialog.close_active()
+
+    # Clear any resume point set by add_gui_item() on the playback ListItem (covering both
+    # Kodi 20+ InfoTagVideo.setResumePoint and legacy ResumeTime property) so Kodi's internal
+    # player does not attempt a competing native resume or prompt when setResolvedUrl is used;
+    # JellyCon handles resume seeking explicitly below via seek_time.
+    if hasattr(list_item, "getVideoInfoTag"):
+        video_tag = list_item.getVideoInfoTag()
+        if hasattr(video_tag, "setResumePoint"):
+            video_tag.setResumePoint(0.0)
+    list_item.setProperty("ResumeTime", "0")
 
     list_item.setPath(playurl)
     list_item = set_list_item_props(item_id, list_item, result, server, listitem_props, item_title)
@@ -1447,8 +1479,9 @@ class Service(xbmc.Player):
         log.debug("Starting monitor service: {0}".format(args))
 
     def onPlayBackStarted(self):
-        # Dismiss any lingering PlayNextDialog when playback begins
+        # Dismiss any lingering PlayNextDialog or ResumeDialog when playback begins
         PlayNextDialog.close_active()
+        ResumeDialog.close_active()
 
         # Will be called when xbmc starts playing a file
         if not xbmc.Player().isPlaying():
