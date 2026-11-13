@@ -18,18 +18,18 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        py_version: [ 'py2', 'py3' ]
+        py_version: [ 'py3' ]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           # This grabs your manual input OR falls back to the default push/tag ref
           ref: ${{ inputs.target_branch || github.ref }}
 
       - name: Set up Python 3.x
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
-          python-version: 3.9
+          python-version: '3.12'
 
       - name: Install dependencies
         run: |
@@ -40,7 +40,7 @@ jobs:
         run: python build.py --version ${{ matrix.py_version }}
 
       - name: Publish Build Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           retention-days: 14
           name: ${{ matrix.py_version }}-build-artifact
